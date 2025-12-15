@@ -12,6 +12,7 @@ import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Component
 public class JwtAuthFilter implements GlobalFilter{
@@ -27,33 +28,44 @@ public class JwtAuthFilter implements GlobalFilter{
 
         String path = exchange.getRequest().getURI().getPath();
 
-        // Публичные эндпоинты, которые не требуют токена
-        if (path.equals("/register") || path.startsWith("/auth") || path.equals("/users")) {
+        exchange.getRequest().getHeaders().forEach((key, value) -> System.out.println(key + " : " + value));
+
+        // Публичные эндпоинты
+        if (path.equals("/register") || path.startsWith("/auth")) {
             return chain.filter(exchange);
         }
 
-        String authHeader = exchange.getRequest().getHeaders()
-                .getFirst(HttpHeaders.AUTHORIZATION);
-
+        // Получаем Authorization
+        String authHeader = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             return unauthorized(exchange);
         }
 
-        String token = authHeader.substring(7);
-
         Claims claims;
         try {
-            claims = jwtService.parse(token);
+            claims = jwtService.parse(authHeader.substring(7));
         } catch (Exception e) {
             return unauthorized(exchange);
         }
 
         String userId = claims.getSubject();
-        String roles = String.join(",", claims.get("roles", List.class));
+        String rolesHeader;
+
+        // Поддержка одной или нескольких ролей
+        Object rolesClaim = claims.get("roles");
+        if (rolesClaim instanceof List<?> rolesList) {
+            rolesHeader = rolesList.stream()
+                    .map(String::valueOf)
+                    .collect(Collectors.joining(","));
+        } else if (claims.get("role") != null) {
+            rolesHeader = claims.get("role").toString();
+        } else {
+            return unauthorized(exchange);
+        }
 
         ServerHttpRequest mutatedRequest = exchange.getRequest().mutate()
                 .header("X-User-Id", userId)
-                .header("X-User-Roles", roles)
+                .header("X-User-Roles", rolesHeader)
                 .build();
 
         return chain.filter(exchange.mutate().request(mutatedRequest).build());
