@@ -2,13 +2,11 @@ package com.filter;
 
 import com.util.JwtUtil;
 import io.jsonwebtoken.Claims;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
-import org.springframework.core.Ordered;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
@@ -16,59 +14,47 @@ import reactor.core.publisher.Mono;
 import java.util.List;
 
 @Component
-public class JwtAuthFilter implements GlobalFilter, Ordered {
+public class JwtAuthFilter implements GlobalFilter{
 
-    private final JwtUtil jwtUtil;
-    private final Logger log = LoggerFactory.getLogger(JwtAuthFilter.class);
+    private final JwtUtil jwtService;
 
-    private static final List<String> WHITELIST_PREFIX = List.of(
-            "/auth/login",
-            "/auth/register",
-            "/auth/refresh",
-            "/auth/validate",
-            "/items",
-            "/api/orderItems"
-    );
-
-    public JwtAuthFilter(JwtUtil jwtUtil) {
-        this.jwtUtil = jwtUtil;
+    public JwtAuthFilter(JwtUtil jwtService) {
+        this.jwtService = jwtService;
     }
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
-        String path = exchange.getRequest().getURI().getPath();
 
+        String authHeader = exchange.getRequest()
+                .getHeaders()
+                .getFirst(HttpHeaders.AUTHORIZATION);
 
-        if (WHITELIST_PREFIX.stream().anyMatch(path::startsWith)) {
-            return chain.filter(exchange);
-        }
-
-        String authHeader = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
-            return exchange.getResponse().setComplete();
+            return unauthorized(exchange);
         }
 
         String token = authHeader.substring(7);
-        try {
-            Claims claims = jwtUtil.validateAndParse(token);
 
-            String subject = claims.getSubject();
-            if (subject != null) {
-                exchange.getRequest().mutate()
-                        .header("X-User-Id", subject)
-                        .build();
-            }
-            return chain.filter(exchange);
+        Claims claims;
+        try {
+            claims = jwtService.parse(token);
         } catch (Exception e) {
-            log.warn("JWT validation failed: {}", e.getMessage());
-            exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
-            return exchange.getResponse().setComplete();
+            return unauthorized(exchange);
         }
+
+        String userId = claims.getSubject();
+        String roles = String.join(",", claims.get("roles", List.class));
+
+        ServerHttpRequest mutatedRequest = exchange.getRequest().mutate()
+                .header("X-User-Id", userId)
+                .header("X-User-Roles", roles)
+                .build();
+
+        return chain.filter(exchange.mutate().request(mutatedRequest).build());
     }
 
-    @Override
-    public int getOrder() {
-        return -5; // run early
+    private Mono<Void> unauthorized(ServerWebExchange exchange) {
+        exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
+        return exchange.getResponse().setComplete();
     }
 }

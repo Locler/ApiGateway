@@ -3,22 +3,26 @@ package com.util;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import java.nio.charset.StandardCharsets;
 import java.security.Key;
 
 @Component
 public class JwtUtil {
 
-    private final Key key;
+    @Value("${jwt.secret}")
+    private String secret;
 
-    public JwtUtil(@Value("${jwt.secret}") String secret) {
-        this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
+    private Key key;
+
+    @PostConstruct
+    void init() {
+        key = Keys.hmacShaKeyFor(secret.getBytes());
     }
 
-    public Claims validateAndParse(String token) {
+    public Claims parse(String token) {
         return Jwts.parserBuilder()
                 .setSigningKey(key)
                 .build()
