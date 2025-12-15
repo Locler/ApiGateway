@@ -14,13 +14,27 @@ public class WebClientConfig {
     @Value("${services.user}")
     private String userBase;
 
+    @Value("${gateway.base}")
+    private String gatewayBase;
+
     @Bean("authClient")
     public WebClient authClient() {
-        return WebClient.builder().baseUrl(authBase).build();
+        return WebClient.builder()
+                .baseUrl(authBase)
+                .build();
     }
 
     @Bean("userClient")
     public WebClient userClient() {
-        return WebClient.builder().baseUrl(userBase).build();
+        return WebClient.builder()
+                .baseUrl(userBase) // прямое обращение к UserService
+                .build();
+    }
+
+    @Bean("apiGatewayClient")
+    public WebClient apiGatewayClient() {
+        return WebClient.builder()
+                .baseUrl(gatewayBase) // все запросы через API Gateway
+                .build();
     }
 }

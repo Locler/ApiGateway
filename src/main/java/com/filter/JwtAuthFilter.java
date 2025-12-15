@@ -25,8 +25,14 @@ public class JwtAuthFilter implements GlobalFilter{
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
 
-        String authHeader = exchange.getRequest()
-                .getHeaders()
+        String path = exchange.getRequest().getURI().getPath();
+
+        // Публичные эндпоинты, которые не требуют токена
+        if (path.equals("/register") || path.startsWith("/auth") || path.equals("/users")) {
+            return chain.filter(exchange);
+        }
+
+        String authHeader = exchange.getRequest().getHeaders()
                 .getFirst(HttpHeaders.AUTHORIZATION);
 
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {

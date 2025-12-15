@@ -14,21 +14,22 @@ import java.util.HashMap;
 import java.util.Map;
 
 @RestController
+@RequestMapping("/register")
 public class RegistrationController {
 
     private final Logger log = LoggerFactory.getLogger(RegistrationController.class);
 
-    private final WebClient authClient;
+    private final WebClient userClient;  // Прямой вызов UserService (8082)
+    private final WebClient authClient;  // AuthService
 
-    private final WebClient userClient;
 
-    public RegistrationController(@Qualifier("authClient") WebClient authClient,
-                                  @Qualifier("userClient") WebClient userClient) {
-        this.authClient = authClient;
+    public RegistrationController(@Qualifier("userClient") WebClient userClient,
+                                  @Qualifier("authClient") WebClient authClient) {
         this.userClient = userClient;
+        this.authClient = authClient;
     }
 
-    @PostMapping(value = "/register", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<Map<String, Map<String, Object>>>> register(
             @RequestBody Map<String, Object> body) {
 
@@ -40,58 +41,40 @@ public class RegistrationController {
                     .body(Map.of("error", Map.of("message", "credentials and profile required"))));
         }
 
-        // 1) create credentials in auth-service
-        return authClient.post()
-                .uri("/auth/register")
-                .bodyValue(credentials)
+        // 1) Создание пользователя напрямую на UserService
+        return userClient.post()
+                .uri("/users")
+                .header("X-Service-Call", "true")  // сервисный вызов
+                .bodyValue(profile)
                 .retrieve()
                 .bodyToMono(new ParameterizedTypeReference<Map<String, Object>>() {})
-                .defaultIfEmpty(Map.of())
-                .flatMap(authResp -> {
-                    // authId для rollback
-                    final Object finalAuthId = authResp.getOrDefault("username", authResp.get("id"));
-                    final Map<String, Object> profileWithAuth = new HashMap<>(profile);
-                    if (finalAuthId != null) {
-                        profileWithAuth.put("authIdentifier", finalAuthId);
-                    }
+                .flatMap(userResp -> {
+                    Long userId = Long.valueOf(userResp.get("id").toString());
 
-                    // 2) create user profile
-                    return userClient.post()
-                            .uri("/users")
-                            .bodyValue(profileWithAuth)
+                    // 2) тело запроса для AuthService
+                    Map<String, Object> authRequest = new HashMap<>();
+                    authRequest.put("userId", userId);
+                    authRequest.put("username", credentials.get("username"));
+                    authRequest.put("password", credentials.get("password"));
+                    authRequest.put("role", credentials.getOrDefault("role", "USER"));
+
+                    // 3) отправка на AuthService
+                    return authClient.post()
+                            .uri("/auth/register")
+                            .bodyValue(authRequest)
                             .retrieve()
-                            .bodyToMono(new ParameterizedTypeReference<Map<String, Object>>() {})
-                            .map(userResp -> {
+                            .bodyToMono(Void.class)
+                            .then(Mono.fromCallable(() -> {
                                 Map<String, Map<String, Object>> result = new HashMap<>();
-                                result.put("auth", authResp);
                                 result.put("user", userResp);
+                                result.put("auth", Map.of("status", "success"));
                                 return ResponseEntity.status(201).body(result);
-                            })
-                            .onErrorResume(userErr -> {
-                                log.error("User creation failed, rolling back auth. Error: {}", userErr.getMessage());
-                                if (finalAuthId != null) {
-                                    return authClient.delete()
-                                            .uri(uriBuilder -> uriBuilder.path("/auth/{idOrUsername}")
-                                                    .build(finalAuthId))
-                                            .retrieve()
-                                            .bodyToMono(Void.class)
-                                            .onErrorResume(delErr -> {
-                                                log.error("Rollback DELETE /auth/{} failed: {}", finalAuthId, delErr.getMessage());
-                                                return Mono.error(new RuntimeException("User creation failed and rollback failed"));
-                                            })
-                                            .then(Mono.error(new RuntimeException("User creation failed, auth rolled back")));
-                                } else {
-                                    return Mono.error(new RuntimeException("User creation failed and no auth id for rollback"));
-                                }
-                            });
+                            }));
                 })
-                .onErrorResume(authErr -> {
-                    log.error("Auth registration failed: {}", authErr.getMessage());
+                .onErrorResume(err -> {
+                    log.error("Registration failed: {}", err.getMessage());
                     Map<String, Map<String, Object>> errorBody = Map.of(
-                            "error", Map.of(
-                                    "message", "auth registration failed",
-                                    "detail", authErr.getMessage()
-                            )
+                            "error", Map.of("message", "registration failed", "detail", err.getMessage())
                     );
                     return Mono.just(ResponseEntity.status(500).body(errorBody));
                 });
