@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 @Component
-public class JwtAuthFilter implements GlobalFilter{
+public class JwtAuthFilter implements GlobalFilter {
 
     private final JwtUtil jwtService;
 
@@ -38,6 +38,7 @@ public class JwtAuthFilter implements GlobalFilter{
         // Получаем Authorization
         String authHeader = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+
             return unauthorized(exchange);
         }
 
@@ -45,8 +46,11 @@ public class JwtAuthFilter implements GlobalFilter{
         try {
             claims = jwtService.parse(authHeader.substring(7));
         } catch (Exception e) {
+            System.out.println("JWT PARSE ERROR: " + e.getMessage());
+            e.printStackTrace();
             return unauthorized(exchange);
         }
+        //
 
         String userId = claims.getSubject();
         String rolesHeader;
