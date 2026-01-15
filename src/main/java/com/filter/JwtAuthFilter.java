@@ -2,6 +2,7 @@ package com.filter;
 
 import com.util.JwtUtil;
 import io.jsonwebtoken.Claims;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.http.HttpHeaders;
@@ -15,6 +16,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 @Component
+@Slf4j
 public class JwtAuthFilter implements GlobalFilter {
 
     private final JwtUtil jwtService;
@@ -46,7 +48,7 @@ public class JwtAuthFilter implements GlobalFilter {
         try {
             claims = jwtService.parse(authHeader.substring(7));
         } catch (Exception e) {
-            System.out.println("JWT PARSE ERROR: " + e.getMessage());
+            log.info("JWT PARSE ERROR: {}", e.getMessage());
             e.printStackTrace();
             return unauthorized(exchange);
         }
