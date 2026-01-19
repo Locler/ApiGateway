@@ -29,6 +29,21 @@ public class RegistrationController {
         this.authClient = authClient;
     }
 
+    private Mono<Void> rollbackUser(Long userId) {
+        return userClient.delete()
+                .uri("/users/{id}", userId)
+                .header("X-Service-Call", "true")
+                .retrieve()
+                .bodyToMono(Void.class)
+                .doOnSuccess(v ->
+                        log.warn("Rollback executed: user {} deleted", userId)
+                )
+                .onErrorResume(e -> {
+                    log.error("Rollback failed for user {}", userId, e);
+                    return Mono.empty(); // чтобы не затирать оригинальную ошибку
+                });
+    }
+
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     public Mono<ResponseEntity<Map<String, Map<String, Object>>>> register(
             @RequestBody Map<String, Object> body) {
@@ -47,7 +62,8 @@ public class RegistrationController {
                 .header("X-Service-Call", "true")  // сервисный вызов
                 .bodyValue(profile)
                 .retrieve()
-                .bodyToMono(new ParameterizedTypeReference<Map<String, Object>>() {})
+                .bodyToMono(new ParameterizedTypeReference<Map<String, Object>>() {
+                })
                 .flatMap(userResp -> {
                     Long userId = Long.valueOf(userResp.get("id").toString());
 
@@ -64,12 +80,20 @@ public class RegistrationController {
                             .bodyValue(authRequest)
                             .retrieve()
                             .bodyToMono(Void.class)
+
+                            // rollback если AuthService упал
+                            .onErrorResume(authErr ->
+                                    rollbackUser(userId)
+                                            .then(Mono.error(authErr))
+                            )
+
                             .then(Mono.fromCallable(() -> {
                                 Map<String, Map<String, Object>> result = new HashMap<>();
                                 result.put("user", userResp);
                                 result.put("auth", Map.of("status", "success"));
                                 return ResponseEntity.status(201).body(result);
                             }));
+
                 })
                 .onErrorResume(err -> {
                     log.error("Registration failed: {}", err.getMessage());
