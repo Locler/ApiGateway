@@ -16,7 +16,7 @@ services:
       - auth_pgdata:/var/lib/postgresql/data
 
   auth-service:
-    build: ./auth-service
+    build: ./AuthService
     container_name: auth-service
     depends_on:
       - auth-db
@@ -44,7 +44,7 @@ services:
       - user_pgdata:/var/lib/postgresql/data
 
   user-service:
-    build: ./user-service
+    build: ./UserService
     container_name: user-service
     depends_on:
       - user-db
@@ -73,7 +73,7 @@ services:
       - order_pgdata:/var/lib/postgresql/data
 
   order-service:
-    build: ./order-service
+    build: ./OrderService
     container_name: order-service
     depends_on:
       - order-db
@@ -119,7 +119,7 @@ services:
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
 
   payment-service:
-    build: ./payment-service
+    build: ./PaymentService
     container_name: payment-service
     depends_on:
       - payment-db
@@ -131,11 +131,13 @@ services:
       SPRING_DATASOURCE_USERNAME: ${DB_USER}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      API_URL: https://random-data-api.com
+      API_PATH: /api/number/random_number
 
 
   # API Gateway
   api-gateway:
-    build: ./api-gateway
+    build: ./ApiGateway
     container_name: api-gateway
     depends_on:
       - auth-service
