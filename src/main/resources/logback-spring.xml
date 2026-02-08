@@ -1,5 +1,4 @@
 <configuration>
-
     <appender name="LOKI" class="com.github.loki4j.logback.Loki4jAppender">
         <http>
             <url>http://loki:3100/loki/api/v1/push</url>
@@ -8,7 +7,7 @@
         <format>
             <label>
                 <pattern>
-                    service=${spring.application.name},
+                    service=${SPRING_APPLICATION_NAME},
                     namespace=${KUBERNETES_NAMESPACE:-default}
                 </pattern>
             </label>
@@ -24,5 +23,4 @@
     <root level="INFO">
         <appender-ref ref="LOKI"/>
     </root>
-
 </configuration>
